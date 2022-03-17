@@ -11,7 +11,7 @@ from functools import partial
 from dateutil import parser
 
 
-def dataGen(fitsFileName, sigma=[0.7], boxSize=[0.3], outPath=None):
+def dataGen(fitsFileName, sigma=[0.7], boxSize=[3], outPath=None):
     print("processing", fitsFileName)
     sptPath = fitsFileName.split("/")
     mjd = int(sptPath[-2])
@@ -66,6 +66,7 @@ def dataGen(fitsFileName, sigma=[0.7], boxSize=[0.3], outPath=None):
 
             df = fvcT.positionerTableMeas.copy()
             df["rotpos"] = ROTPOS
+            df["ipa"] = IPA
             df["alt"] = ALT
             df["imgNum"] = imgNum
             df["useWinpos"] = useWinpos
@@ -115,7 +116,7 @@ def doRotation():
     p.map(_dataGen, fileList)
 
 
-def doOneHistory(fvcFile):
+def doOneHistory(fvcFile, sigma=[0, 0.7], boxSize=[3,5]):
     outDir = "/uufs/chpc.utah.edu/common/home/u0449727/fpscommis/fvc/histData/"
     imgNumber = fvcFile.split("-")[-1].split(".")[0]
     mjd = fvcFile.split("fcam/apo/")[-1].split("/")[0]
@@ -123,7 +124,7 @@ def doOneHistory(fvcFile):
     # dataGen(fvcFile, outPath=outFile)
 
     try:
-        dataGen(fvcFile, outPath=outFile)
+        dataGen(fvcFile, sigma=sigma, boxSize=boxSize, outPath=outFile)
         print(fvcFile, "worked")
         return None
     except:

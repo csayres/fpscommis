@@ -20,12 +20,19 @@ df["betaErr"] = (df.betaReport - df.betaMeas)
 
 df["rErr"] = numpy.sqrt((df.xWokReportMetrology - df.xWokMeasMetrology)**2 + (df.yWokReportMetrology - df.yWokMeasMetrology)**2)
 
-import pdb; pdb.set_trace()
+# df = df[df.rErr < 1.5]
+
+df = df[df.boxSize != 5]
+
+# import pdb; pdb.set_trace()
 
 # filter by unfolded arms
 # df = df[df.betaMeas < 160]
 
-# df = df.groupby(["datetime", "positionerID", ""]).mean().reset_index()
+# import pdb; pdb.set_trace()
+
+df = df.sort_values("datetime")
+df = df.groupby(["positionerID", "configid", "mjd", "useWinpos", "boxSize"]).head(1)
 
 # handle alpha wrapping
 alphaErr = []
@@ -43,22 +50,25 @@ df["alphaErr"] = alphaErr
 #create datetime column
 
 plt.figure()
-plt.hist(df.alphaErr, bins=500)
+sns.histplot(x="alphaErr", data=df, hue="useWinpos", bins=500)
 
 plt.figure()
-plt.hist(df.betaErr, bins=500)
+sns.histplot(x="betaErr", data=df, hue="useWinpos", bins=500)
+
+plt.figure()
+sns.histplot(x="rErr", data=df, hue="useWinpos", bins=500)
 
 
 plt.figure(figsize=(13,8))
-sns.scatterplot(x="datetime", y="alphaErr", ci=None, markers=True, alpha=0.1, data=df)
+sns.lineplot(x="datetime", y="alphaErr", hue="useWinpos", style="positionerID", ci=None, markers=True, alpha=0.05, data=df)
 
 
 plt.figure(figsize=(13,8))
-sns.scatterplot(x="datetime", y="betaErr", ci=None, markers=True, alpha=0.1, data=df)
+sns.lineplot(x="datetime", y="betaErr", hue="useWinpos", style="positionerID", ci=None, markers=True, alpha=0.05, data=df)
 
 
 plt.figure(figsize=(13,8))
-sns.scatterplot(x="datetime", y="rErr", ci=None, markers=True, alpha=0.1, data=df)
+sns.lineplot(x="datetime", y="rErr", hue="useWinpos", style="positionerID", ci=None, markers=True, alpha=0.05, data=df)
 
 plt.show()
 
