@@ -19,7 +19,8 @@ def dropColsDF(df):
     return df.drop(columns=dropMe)
 
 # intermediate csv directory
-CSV_DIR = "/uufs/chpc.utah.edu/common/home/u0449727/fpscommis/fvc/rot2"
+WORK_DIR = "/uufs/chpc.utah.edu/common/home/sdss50/sdsswork/users/u0449727"
+CSV_DIR = WORK_DIR + "/rot2"
 
 polidSet = {
     "nom": [0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],
@@ -27,9 +28,15 @@ polidSet = {
     "all": list(range(33)),
 }
 
-DO_REDUCE = True
+rawDF = None
+resampDF = None
+
+DO_REDUCE = False
 DO_COMPILE = False
 DO_RESAMP = False
+DO_FILTER = False
+DO_DEMEAN = True
+DISABLED_ROBOTS = [54, 463, 608, 1136, 1182, 184, 1042]
 
 
 def getRawFile(mjd, imgNum):
@@ -182,10 +189,12 @@ if DO_COMPILE:
         lastMJD = mjd
         lastConfig = configid
 
-    df = pandas.concat(dfList)
-    df = dropColsDF(df)
-    df.to_csv("raw.csv")
+    rawDF = pandas.concat(dfList)
+    rawDF = dropColsDF(rawDF)
+    rawDF.to_csv(WORK_DIR + "/raw.csv")
     print("DO_COMPILE took", (time.time()-tstart)/60, "minutes")
+
+
 # df = df[df.slewNum.isin([1,2,3,4,5])]
 
 #### boot strap averages over multiple exposures #####
@@ -197,7 +206,7 @@ replace = True  # tecnhically for bootstrap we should replace
 
 
 def resampleAndAverage(slewNum):
-    sn = df[df.slewNum == slewNum].copy()
+    sn = rawDF[rawDF.slewNum == slewNum].copy()
     mjd = int(sn.mjd.to_numpy()[0])
     imgNums = list(set(sn.imgNum))
     dfList = []
@@ -266,11 +275,150 @@ if DO_RESAMP:
     dfList = p.map(resampleAndAverage, slewNums)
     p.close()
 
-    df = pandas.concat(dfList)
+    resampDF = pandas.concat(dfList)
 
-    df.to_csv("resampled.csv")
+    resampDF.to_csv(WORK_DIR + "/resampled.csv")
 
     print("DO_RESAMP took", (time.time()-tstart)/60, "minutes")
+
+
+# begin filtering data
+if DO_FILTER:
+    if rawDF is None:
+        t1 = time.time()
+        rawDF = pandas.read_csv(WORK_DIR + "/raw.csv")
+        print("loading raw file took", (time.time()-t1)/60)
+
+    if resampDF is None:
+        t1 = time.time()
+        resampDF = pandas.read_csv(WORK_DIR + "/resampled.csv")
+        print("loading resampled file took", (time.time()-t1)/60)
+
+    rawDF = rawDF[rawDF.mjd == 59661]
+    resampDF = resampDF[resampDF.mjd == 59661]
+
+    rawDF = rawDF[rawDF.rotpos > -20]
+    resampDF = resampDF[resampDF.rotpos > -20]
+
+    rawDF = rawDF[~rawDF.positionerID.isin(DISABLED_ROBOTS)]
+    resampDF = resampDF[~resampDF.positionerID.isin(DISABLED_ROBOTS)]
+
+    rawDF = rawDF[rawDF.wokErr < 0.5]
+    resampDF = resampDF[resampDF.wokErr < 0.5]
+
+    rawDF = rawDF[rawDF.polidName.isin(["nom", "all"])]
+    resampDF = resampDF[resampDF.polidName.isin(["nom", "all"])]
+
+    keepCols = [
+        "positionerID", "configid", "rotpos", "alt", "mjd", "date", "temp", "slewNum", "navg", "avgType", "pixelCombine",
+        "x", "x2", "y", "y2", "xWinpos", "yWinpos", "flux", "peak", "scale", "xtrans", "ytrans",
+        "xWokMeasMetrology", "yWokMeasMetrology", "fiducialRMS", "polidName"
+    ] + ["ZB_%s"%("%i"%polid).zfill(2) for polid in range(33)]
+
+    rawDF = rawDF[keepCols]
+    rawDF.to_csv(WORK_DIR + "/raw_filtered.csv")
+    resampDF = resampDF[keepCols]
+    resampDF.to_csv(WORK_DIR + "/resampled_filtered.csv")
+
+
+if DO_DEMEAN:
+    raw_filtered = pandas.read_csv(WORK_DIR + "/raw_filtered.csv")
+    resampled_filtered = pandas.read_csv(WORK_DIR + "/resampled_filtered.csv")
+    all_filtered = pandas.concat([raw_filtered, resampled_filtered])
+    all_filtered.to_csv(WORK_DIR + "/all_filtered.csv")
+
+
+    mean_rotmarg = raw_filtered.groupby(["positionerID", "configid", "polidName"]).mean().reset_index()
+
+    avgCols = ["temp", "navg", "x", "x2", "y", "y2", "xWinpos", "yWinpos",
+                "flux", "peak", "scale", "xtrans", "ytrans",
+                "xWokMeasMetrology", "yWokMeasMetrology", "fiducialRMS"] + ["ZB_%s"%("%i"%polid).zfill(2) for polid in range(33)]
+
+    t1 = time.time()
+
+    pids = numpy.list(numpy.set(mean_rotmarg.positionerID))
+    cfgs = list(set(mean_rotmarg.configid))
+    polns = list(set(mean_rotmarg.polidName))
+    rots = list(set(all_filtered.rotpos))
+
+
+    def doOne(positionerID):
+        print("rot marg processing positioner", positionerID)
+        dfPOS = all_filtered[all_filtered.positionerID==positionerID].copy()
+        dfList = []
+        for configid in cfgs:
+            for polidName in polns:
+                _mean = mean_rotmarg[
+                    (mean_rotmarg.positionerID==positionerID) & \
+                    (mean_rotmarg.configid==configid) & \
+                    (mean_rotmarg.polidName==polidName)
+                ]
+
+                _df = dfPOS[
+                    (dfPOS.positionerID==positionerID) & \
+                    (dfPOS.configid==configid) & \
+                    (dfPOS.polidName==polidName)
+                ].copy()
+
+                for col in avgCols:
+                    _df[col] = _df[col] - _mean[col]
+
+                dfList.append(_df)
+        return pandas.concat(dfList)
+
+    p = Pool(28)
+    all_filtered_demean = p.map(doOne, pids)
+    p.close()
+
+    all_filtered_demean_rotmarg = pandas.concat(all_filtered_demean)
+    all_filtered_demean_rotmarg.to_csv(WORK_DIR + "/all_filtered_demean_rotmarg.csv")
+    mean_rotmarg.to_csv(WORK_DIR + "/mean_rotmarg.csv")
+    print("demean rotmarg took", (time.time()-t1)/60)
+
+
+    t1 = time.time()
+    mean = raw_filtered.groupby(["positionerID", "configid", "polidName", "rotpos"]).mean().reset_index()
+
+
+    def doOther(positionerID):
+        print("processing positioner", positionerID)
+        dfPOS = all_filtered[all_filtered.positionerID==positionerID].copy()
+        dfList = []
+        for configid in cfgs:
+            for polidName in polns:
+                for rotpos in rots:
+                    _mean = mean[
+                        (mean.positionerID==positionerID) & \
+                        (mean.configid==configid) & \
+                        (mean.polidName==polidName) & \
+                        (mean.rotpos==rotpos)
+                    ]
+
+                    _df = dfPOS[
+                        (dfPOS.positionerID==positionerID) & \
+                        (dfPOS.configid==configid) & \
+                        (dfPOS.polidName==polidName) & \
+                        (mean.rotpos==rotpos)
+                    ].copy()
+
+                    for col in avgCols:
+                        _df[col] = _df[col] - _mean[col]
+
+                    dfList.append(_df)
+        return pandas.concat(dfList)
+
+    p = Pool(28)
+    all_filtered_demean = p.map(doOther, pids)
+    p.close()
+
+    all_filtered_demean = pandas.concat(all_filtered_demean)
+    all_filtered_demean.to_csv(WORK_DIR + "/all_filtered_demean.csv")
+    mean.to_csv(WORK_DIR + "/mean.csv")
+    print("demean took", (time.time()-t1)/60)
+
+
+
+    import pdb; pdb.set_trace()
 
 
 
