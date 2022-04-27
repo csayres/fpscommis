@@ -27,7 +27,7 @@ def dropColsDF(df):
 
 # intermediate csv directory
 WORK_DIR = "/uufs/chpc.utah.edu/common/home/sdss50/sdsswork/users/u0449727"
-CSV_DIR = WORK_DIR + "/rot5"
+CSV_DIR = WORK_DIR + "/rot6"
 
 polidSet = {
     "nom": [0, 1, 2, 3, 4, 5, 6, 9, 20, 28, 29],
@@ -38,7 +38,7 @@ polidSet = {
 # rawDF = None
 # resampDF = None
 
-DO_REDUCE = True
+DO_REDUCE = False
 DO_COMPILE = True
 DO_FILTER = True
 DO_RESAMP = True
@@ -49,8 +49,8 @@ DISABLED_ROBOTS = [54, 463, 608, 1136, 1182, 184, 1042]
 # centtypeList = ["simple"]
 # centSigmaList = [0.7, 1, 1.25, 1.5, 2]
 
-centSigmaList = [("sep", 1), ("simple", 0.005), ("simple", 0.2), ("simple", 0.5), ("simple", 1)]
-
+# centSigmaList = [("sep", 1), ("simple", 0.005), ("simple", 0.2), ("simple", 0.5), ("simple", 1)]
+centSigmaList = [("sep", 1), ("nudge", 1)]
 
 def getRawFile(mjd, imgNum):
     baseDir = "/uufs/chpc.utah.edu/common/home/sdss50/sdsswork/data/fcam/apo/%i"%mjd
@@ -157,9 +157,9 @@ if DO_REDUCE:
     tstart = time.time()
     dataDict = {
         59661: [26, 619],
-        59667: [2, 793],
-        59668: [1, 792],
-        59669: [5, 611]
+        # 59667: [2, 793],
+        # 59668: [1, 792],
+        # 59669: [5, 611]
     }
 
     # generate the file list
@@ -172,7 +172,7 @@ if DO_REDUCE:
                 continue
             fileList.append(rawFile)
 
-    _solveImage = partial(solveImage, writecsv=True)
+    _solveImage = partial(solveImage, writecsv=True, clobber=True)
 
     # for fileName in fileList[:5]:
     #     print("processing file", fileName)
@@ -232,7 +232,7 @@ if DO_FILTER:
 
     keepCols = [
         "positionerID", "configid", "rotpos", "alt", "mjd", "date", "temp", "slewNum", "navg", "fvcRot",
-        "x", "x2", "y", "y2", "xWinpos", "yWinpos", "xSimple", "ySimple", "flux", "peak", "scale", "xtrans", "ytrans",
+        "x", "x2", "y", "y2", "xWinpos", "yWinpos", "xSimple", "ySimple", "xNudge", "yNudge", "flux", "peak", "scale", "xtrans", "ytrans",
         "xWokMeasMetrology", "yWokMeasMetrology", "fiducialRMS", "polidName", "centtype", "wokErr", "imgNum", "simpleSigma"
     ] + ["ZB_%s"%("%i"%polid).zfill(2) for polid in range(33)]
 
