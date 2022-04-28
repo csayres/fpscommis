@@ -5,6 +5,8 @@ from pydl.pydlutils.yanny import yanny
 from numpy.lib.recfunctions import drop_fields
 import pandas
 import datetime
+from coordio.transforms import FVCTransformAPO
+from coordio.utils import fitsTableToPandas
 
 CENTTYPE = "nudge"
 POLIDS = list(range(33))
@@ -86,6 +88,7 @@ def parseConfSummary(ff):
     df["raCen"] = float(yf["raCen"])
     df["decCen"] = float(yf["decCen"])
     df["filename"] = ff
+    df["fvc_image_path"] = yf["fvc_image_path"]
 
     if "focal_scale" in yf.pairs():
         df["focal_scale"] = float(yf["focal_scale"])
@@ -143,9 +146,93 @@ def parseConfSummary(ff):
     return df
 
 
+def reprocessFVC(fvcFile):
+    ff = fits.open(fvcFile)
+    imgData = ff[1].data
+    IPA = ff[1].header["IPA"]
+    if ff[6].name == "POSANGLES":
+        positionerCoords = fitsTableToPandas(ff[6].data)
+    elif ff[7].name == "POSANGLES":
+        positionerCoords = fitsTableToPandas(ff[7].data)
+    else:
+        raise RuntimeError("couldn't find POSANGLES table!!!!", fvcFile)
+
+    fvcT = FVCTransformAPO(
+        imgData,
+        positionerCoords,
+        IPA
+    )
+    fvcT.extractCentroids()
+    fvcT.fit()
+    return fvcT.positionerTableMeas
 
 
+def updatePositionerTables():
 
+    outDir = "/uufs/chpc.utah.edu/common/home/u0449727/work/confReprocess/"
+
+    mjdDesignList = [
+        [59618, 35969],
+        [59619, 35975],
+        [59620, 35957],
+        [59620, 35981],
+        [59620, 35989],
+        [59621, 35934],
+        [59621, 35970],
+        [59623, 35986],
+        [59624, 35919],
+        [59624, 35935],
+        [59624, 35988],
+        [59624, 35990],
+        [59625, 35925],
+        [59625, 35986],
+        [59626, 35989],
+        [59652, 106921],
+        [59654, 106935],
+        [59662, 106935],
+        [59663, 35962],
+        [59663, 106935],
+        [59664, 35961],
+        [59664, 106935],
+        [59665, 35964],
+        [59665, 106936],
+        [59666, 106936],
+        [59669, 106935],
+        [59671, 35962],
+        [59671, 35993],
+        [59672, 35962],
+        [59672, 35993],
+        [59674, 35962],
+        [59674, 35993],
+        [59677, 35994],
+        [59678, 35961],
+        [59678, 35994],
+        [59683, 35996],
+        [59684, 36004],
+        [59686, 35963],
+        [59687, 36004],
+        [59690, 35987],
+        [59691, 35988]
+    ]
+
+    for mjd, design in mjdDesignList:
+        confids, fvcImgList = getFVCFiles(mjd, design)
+        confs, confFs = getConfsummaryFiles(confids)
+        print("on mjd", mjd)
+        for confF in confFs:
+            if confF is not None:
+                yf = yanny(confF)
+                apoPath = yf["fvc_image_path"]
+                tailPath = apoPath.split("/")[-1]
+                utahPath = fvcDir + "%i/%s"%(mjd, tailPath)
+                pt = reprocessFVC(utahPath)
+                baseName = confF.split("/")[-1].split(".")[0]
+                csvName = outDir + baseName + "-positionerTable.csv"
+                pt.to_csv(csvName)
+
+
+if __name__ == "__main__":
+    updatePositionerTables()
 
 
 
