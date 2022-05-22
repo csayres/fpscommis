@@ -4,19 +4,20 @@ import os
 from pydl.pydlutils.yanny import yanny
 from numpy.lib.recfunctions import drop_fields
 import pandas
-import datetime
+from datetime import datetime
 from coordio.transforms import FVCTransformAPO
 from coordio.utils import fitsTableToPandas
+from multiprocessing import Pool
 
-CENTTYPE = "nudge"
-POLIDS = list(range(33))
-
-MJD = 59674
-DESIGN = 35962
+# CENTTYPE = "nudge"
+# POLIDS = list(range(33))
 
 # note FVC measurement was changed on 59697 from winpos to nudge centroids
 fvcDir = "/uufs/chpc.utah.edu/common/home/sdss50/sdsswork/data/fcam/apo/"
-confSumDir = "/uufs/chpc.utah.edu/common/home/sdss50/software/git/sdss/sdsscore/main/apo/summary_files"
+confSumDir = "/uufs/chpc.utah.edu/common/home/sdss50/software/git/sdss/sdsscore/main/apo/summary_files/"
+ditherDir = "/uufs/chpc.utah.edu/common/home/sdss50/sdsswork/sandbox/commiss/apo/"
+gimgDir = "/uufs/chpc.utah.edu/common/home/sdss50/sdsswork/data/gcam/apo/"
+outDir = "/uufs/chpc.utah.edu/common/home/u0449727/work/confReprocess/"
 
 
 def getFVCFiles(mjd, designid):
@@ -33,15 +34,27 @@ def getFVCFiles(mjd, designid):
     return confids, imgList
 
 
+def getGimgFiles(mjd, designid):
+    baseDir = gimgDir + "%i" % mjd
+    imgList = []
+    confids = []
+    for img in allImgs:
+        h = fits.getheader(img, 1)
+        if h["designid"] == designid:
+            imgList.append(img)
+            confids.append(h["configid"])
+    return confids, imgList
+
+
 def getConfsummaryFiles(confidList):
     confSummaryFiles = []
     confSummaryFFiles = []
     for confid in confidList:
-        confidStr = ("%i"@confid).zfill(6)
+        confidStr = ("%i"%confid).zfill(6)
         subdir = confidStr[:-2] + "XX"
 
         filename = "confSummary-%i.par"%confid
-        fFilename = "confSummary-%i.par"%confid
+        fFilename = "confSummaryF-%i.par"%confid
 
         confSummaryFile = os.path.join(confSumDir, subdir, filename)
         confSummaryFFile = os.path.join(confSumDir, subdir, fFilename)
@@ -57,6 +70,10 @@ def getConfsummaryFiles(confidList):
             confSummaryFFiles.append(None)
 
     return confSummaryFiles, confSummaryFFiles
+
+
+def getApogeeFluxes(mjd, configid):
+    ditherFiles = glob.glob(ditherDir + "%i/ditherAPOGEE*.fits"%mjd)
 
 
 def parseConfSummary(ff):
@@ -88,7 +105,11 @@ def parseConfSummary(ff):
     df["raCen"] = float(yf["raCen"])
     df["decCen"] = float(yf["decCen"])
     df["filename"] = ff
-    df["fvc_image_path"] = yf["fvc_image_path"]
+    if "fvc_image_path" in yf.pairs():
+        df["fvc_image_path"] = yf["fvc_image_path"]
+    else:
+        df["fvc_image_path"] = None
+
 
     if "focal_scale" in yf.pairs():
         df["focal_scale"] = float(yf["focal_scale"])
@@ -150,12 +171,9 @@ def reprocessFVC(fvcFile):
     ff = fits.open(fvcFile)
     imgData = ff[1].data
     IPA = ff[1].header["IPA"]
-    if ff[6].name == "POSANGLES":
-        positionerCoords = fitsTableToPandas(ff[6].data)
-    elif ff[7].name == "POSANGLES":
-        positionerCoords = fitsTableToPandas(ff[7].data)
-    else:
-        raise RuntimeError("couldn't find POSANGLES table!!!!", fvcFile)
+
+
+    positionerCoords = fitsTableToPandas(ff["POSANGLES"].data)
 
     fvcT = FVCTransformAPO(
         imgData,
@@ -167,10 +185,28 @@ def reprocessFVC(fvcFile):
     return fvcT.positionerTableMeas
 
 
+def onePositionerTable(x):
+    mjd, design = x
+    confids, fvcImgList = getFVCFiles(mjd, design)
+    confs, confFs = getConfsummaryFiles(confids)
+    print("on mjd/design", mjd, design)
+    for confF in confFs:
+        if confF is not None:
+            yf = yanny(confF)
+            try:
+                apoPath = yf["fvc_image_path"]
+            except:
+                print(confF, "has no fvc_path")
+                continue
+            tailPath = apoPath.split("/")[-1]
+            utahPath = fvcDir + "%i/%s"%(mjd, tailPath)
+            pt = reprocessFVC(utahPath)
+            baseName = confF.split("/")[-1].split(".")[0]
+            csvName = outDir + baseName + "-%i-%i-positionerTable.csv"%(mjd,design)
+            pt.to_csv(csvName)
+
+
 def updatePositionerTables():
-
-    outDir = "/uufs/chpc.utah.edu/common/home/u0449727/work/confReprocess/"
-
     mjdDesignList = [
         [59618, 35969],
         [59619, 35975],
@@ -215,20 +251,9 @@ def updatePositionerTables():
         [59691, 35988]
     ]
 
-    for mjd, design in mjdDesignList:
-        confids, fvcImgList = getFVCFiles(mjd, design)
-        confs, confFs = getConfsummaryFiles(confids)
-        print("on mjd", mjd)
-        for confF in confFs:
-            if confF is not None:
-                yf = yanny(confF)
-                apoPath = yf["fvc_image_path"]
-                tailPath = apoPath.split("/")[-1]
-                utahPath = fvcDir + "%i/%s"%(mjd, tailPath)
-                pt = reprocessFVC(utahPath)
-                baseName = confF.split("/")[-1].split(".")[0]
-                csvName = outDir + baseName + "-positionerTable.csv"
-                pt.to_csv(csvName)
+    p = Pool(25)
+    p.map(onePositionerTable, mjdDesignList)
+    p.close()
 
 
 if __name__ == "__main__":
