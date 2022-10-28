@@ -7,7 +7,7 @@ import pandas
 from coordio.defaults import calibration
 from coordio.utils import refinexy, simplexy
 import sep
-from photutils.detection import DAOStarFinder
+# from photutils.detection import DAOStarFinder
 from coordio.transforms import arg_nearest_neighbor
 import seaborn as sns
 from skimage.transform import SimilarityTransform
@@ -29,7 +29,8 @@ lastIMG = 168
 apExclude = []
 # bossExclude = [50, 1015, 224, 231, 873, 958]  # broken met or boss fiber
 # apExclude = [50, 151, 773]  # broken met or ap fiber
-newRobots = [1231,710,920,776,440,983,1144,56,877,1370,515,1017,898,1111,1092,792,1256,204,751,615,916,478,117,423,535]
+newRobots = [1231, 710, 920, 776, 440, 983, 1144, 56, 877, 1370, 515, 1017,
+                898, 1111, 1092, 792, 1256, 204, 751, 615, 916, 478, 117, 423, 535]
 
 pt = calibration.positionerTable.reset_index()
 wc = calibration.wokCoords.reset_index()
@@ -41,19 +42,20 @@ positionersApogee = numpy.array(list(set(positionerIDs[hasAp])-set(apExclude)))
 
 def getImgFile(imgNum):
     imgStr = ("%i"%imgNum).zfill(4)
-    imgFile = "/data/fcam/%i/proc-fimg-fvclab-%s.fits"%(MJD, imgStr)
+    imgFile = "/data/fcam/%i/proc-fimg-fvc1n-%s.fits"%(MJD, imgStr)
     if os.path.exists(imgFile):
         isProc = True
     else:
-        imgFile = "/data/fcam/%i/fimg-fvclab-%s.fits"%(MJD, imgStr)
+        imgFile = "/data/fcam/%i/fimg-fvc1n-%s.fits"%(MJD, imgStr)
         isProc = False
 
     return imgFile, isProc
 
 
-def processImg(ff, centroidOnly=False):
+def processImg(ff, centroidOnly=False, positionerCoords=None):
     # imgNum = int(fitsFileName.split("-")[-1].split(".")[0])
-    positionerCoords = fitsTableToPandas(ff["POSANGLES"].data)
+    if positionerCoords is None:
+        positionerCoords = fitsTableToPandas(ff["POSANGLES"].data)
     imgData = ff[1].data
 
     fvcT = FVCTransformAPO(
@@ -132,7 +134,8 @@ def compileData():
             ff[1].data = ff[1].data[:,::-1]
         imgSeq += 1
 
-        fbiMet = bool(ff[1].header["LED1"])
+        # fbiMet = bool(ff[1].header["LED1"])
+        fbiMet = isProc
         if fbiMet and lastLED != "met":
             print("met fiber", imgNum)
             imgSeq = 0
@@ -140,9 +143,11 @@ def compileData():
             lastLED = "met"
             dfMetList = []
             metCounter += 1
+            posAngleTable = fitsTableToPandas(ff["POSANGLES"].data)
 
 
-        fbiAp = bool(ff[1].header["LED3"])
+        # fbiAp = bool(ff[1].header["LED3"])
+        fbiAp = isProc == False
         if fbiAp and lastLED != "ap":
             print("ap fiber", imgNum)
             imgSeq = 0
@@ -151,14 +156,13 @@ def compileData():
             # images into something reasonable
             dfMet = pandas.concat(dfMetList)
             _dfMetMeanAll = dfMet.median()
-            _dfMetMean = dfMet.groupby("positionerID").median().reset_index(drop=True)
+            _dfMetMean = dfMet.groupby("positionerID").median().reset_index()
             # generate the FVC transform to use on sci fibers...
 
             polids = numpy.arange(33, dtype=numpy.int16)
             coeffs = numpy.array([_dfMetMeanAll["ZB_%s"%(("%i"%x).zfill(2))] for x in polids])
 
             ahc = AdHocTransform(float(_dfMetMeanAll.rot), float(_dfMetMeanAll.scale), float(_dfMetMeanAll.transx), float(_dfMetMeanAll.transy), polids, coeffs)
-
 
             xyWokMet = _dfMetMean[["xWokMeasMetrology", "yWokMeasMetrology"]].to_numpy()
             posIDMet = _dfMetMean.positionerID.to_numpy()
@@ -187,7 +191,7 @@ def compileData():
 
         else:
             # use last ptmMet for associations
-            cnts = processImg(ff, centroidOnly=True)
+            cnts = processImg(ff, centroidOnly=True, positionerCoords=posAngleTable)
             xySciCCD = cnts[[xCent, yCent]].to_numpy()
             xySciWok = ahc.apply(xySciCCD)
             fluxSci = cnts.peak.to_numpy()
@@ -244,16 +248,9 @@ def compileData():
         imgSeq += 1
         ff.close()
 
-    # import pdb; pdb.set_trace()
-
     ptm = pandas.concat(_ptm)
     ptm.to_csv("ptm2.csv")
 
-
-# def minimizeMe(x, xWok, yWok, dx, dy):
-#     xOff, yOff = x
-#     coeffs = getLinearFit(xWok,yWok,dx,dy,xOff,yOff)
-#     return coeffs[0]**2
 
 
 def getLinearFit(xWok, yWok, dx, dy, xOff=0, yOff=0):
@@ -270,143 +267,21 @@ def getLinearFit(xWok, yWok, dx, dy, xOff=0, yOff=0):
     return coeffs
 
 
-# def findComaCenter(_df):
-#     xInit = numpy.array([0,0])
-#     _dfMean = _df.groupby(["positionerID"]).mean().reset_index()
-#     xWok = _dfMean.xWok.to_numpy()
-#     yWok = _dfMean.yWok.to_numpy()
-#     dx = _dfMean.dx.to_numpy()
-#     dy = _dfMean.dy.to_numpy()
-#     args = (xWok,yWok,dx,dy)
-#     out = minimize(minimizeMe, xInit, args, method="Nelder-Mead", options=dict(disp=True))
-
-#     xOff, yOff = out.x
-#     xOff = 0
-#     yOff = 0
-
-#     coeffs = getLinearFit(xWok,yWok,dx,dy,xOff,yOff)
-#     return xOff, yOff, coeffs
-
-
-    # thetas = numpy.arctan2(_dfMean.yWok, _dfMean.xWok)
-    # dxRot = numpy.cos(thetas)*_dfMean.dx + numpy.sin(thetas)*_dfMean.dy
-    # dyRot = -numpy.sin(thetas)*_dfMean.dx + numpy.cos(thetas)*_dfMean.dy
-
-    # X = numpy.ones((len(dxRot), 2))
-    # X[:,1] = _dfMean.r.to_numpy()
-    # coeffs = numpy.linalg.lstsq(X,dxRot)[0]
-    # print(fi, coeffs)
-    # dxFit = X @ coeffs
-
 
 def measureOffsets():
+    pt = calibration.positionerTable.reset_index()
+
     df = pandas.read_csv("ptm2.csv")
     df["dr"] = numpy.sqrt(df.dx**2+df.dy**2)
     df["r"] = numpy.sqrt(df.xWok**2+df.yWok**2)
+
     df = df[df.dr < 3] # filter out bogus detections
 
-    # dfMean = df.groupby(["positionerID", "fiberIllum"]).mean().reset_index()
-    # dfMean = dfMean[["positionerID", "fiberIllum", "dx", "dy"]]
-    # df = df.merge(dfMean, on=["positionerID", "fiberIllum"], suffixes=(None, "_m")).reset_index()
-    # df["dx"] = df.dx - df.dx_m
-    # df["dy"] = df.dy - df.dy_m
+    # only get apogee detections
+    df = df[df.fiberIllum=="ap"]
 
-    # adjust boss dxys by a linear radial fit
-    # bossCoeffs = numpy.array([0.01958768, 0.99925557])
-
-    _dfList = []
-
-    for fi in ["boss", "ap", "met"]:
-        _df = df[df.fiberIllum==fi]
-
-        if fi=="boss":
-
-            _dfMean = _df.groupby(["positionerID"]).mean().reset_index()
-            _xWok = _dfMean.xWok.to_numpy()
-            _yWok = _dfMean.yWok.to_numpy()
-            _rWok = numpy.sqrt(_xWok**2 + _yWok**2)
-            _dx = _dfMean.dx.to_numpy()
-            _dy = _dfMean.dy.to_numpy()
-
-            coeffs = getLinearFit(_xWok, _yWok, _dx, _dy)
-
-            thetas = numpy.arctan2(_df.yWok, _df.xWok)
-            dxRot = numpy.cos(thetas)*_df.dx + numpy.sin(thetas)*_df.dy
-
-
-            X = numpy.ones((len(_df), 2))
-            X[:,1] = _df.r.to_numpy()
-            dxFit = X @ coeffs
-            dxNew = _df.dx - numpy.cos(thetas)*dxFit
-            dyNew = _df.dy - numpy.sin(thetas)*dxFit
-            _df["dx"] = dxNew
-            _df["dy"] = dyNew
-
-
-        _dfList.append(_df)
-
-    # plt.show()
-
-    df = pandas.concat(_dfList)
-    df["dr"] = numpy.sqrt(df.dx**2+df.dy**2)
-    df["r"] = numpy.sqrt(df.xWok**2+df.yWok**2)
-
-
-    dfSci = df[df.fiberIllum != "met"]
-
-    plt.figure()
-    plt.hist(dfSci[dfSci.fiberIllum=="ap"]["dr"], histtype="step", density=True, label="ap") #bins=numpy.linspace(0, 1.7, 100), label="ap")
-    plt.hist(dfSci[dfSci.fiberIllum=="boss"]["dr"], histtype="step", density=True, label="boss") #bins=numpy.linspace(0, 1.7, 100), label="boss")
-    plt.legend()
-
-    plt.xlabel("dr (mm)")
-
-    dfSciMean = dfSci.groupby(["positionerID", "configID", "fiberIllum"]).mean().reset_index()
-    dfSciMean["dr"] = numpy.sqrt(dfSciMean.dx**2+dfSciMean.dy**2)
-
-    plt.figure()
-    plt.hist(dfSciMean[dfSciMean.fiberIllum=="ap"]["dr"], histtype="step", density=True, bins=numpy.linspace(0, 1.7, 100), label="apMean")
-    plt.hist(dfSciMean[dfSciMean.fiberIllum=="boss"]["dr"], histtype="step", density=True, bins=numpy.linspace(0, 1.7, 100), label="boss")
-    plt.legend()
-
-    plt.xlabel("mean dr (mm)")
-
-    dfSciMean["ddr"] = dfSciMean.dr - numpy.mean(dfSciMean.dr)
-    plt.figure(figsize=(8,8))
-    sns.scatterplot(x="xWok", y="yWok", hue="ddr", s=7, alpha=1, palette="vlag", data=dfSciMean[dfSciMean.fiberIllum=="boss"])
-    plt.axis("equal")
-
-
-    # for positionerID in [1199, 541]:
-    #     _df = dfSciMean[dfSciMean.positionerID==positionerID]
-    #     plt.figure(figsize=(8,8))
-    #     for fi, color in zip(["boss", "ap"], ["blue", "red"]):
-    #         _ddf = _df[_df.fiberIllum==fi]
-    #         x,y,dx,dy = _ddf[["xWok", "yWok", "dx", "dy"]].to_numpy().T
-    #         dx = dx - numpy.mean(dx)
-    #         dy = dy - numpy.mean(dy)
-    #         plt.quiver(x,y,dx,dy,angles="xy",color=color)
-    #     plt.title("%i"%positionerID)
-
-    _dfB = dfSciMean[dfSciMean.fiberIllum=="boss"]
-    plt.figure(figsize=(8,8))
-    xb,yb,dxb,dyb = _dfB[["xWok", "yWok", "dx", "dy"]].to_numpy().T
-    plt.quiver(xb,yb,dxb,dyb,angles="xy", units="xy", width=0.5, scale=0.1)
-    plt.axis("equal")
-    plt.title("boss")
-
-
-    _dfA = dfSciMean[dfSciMean.fiberIllum=="ap"]
-    plt.figure(figsize=(8,8))
-    xa,ya,dxa,dya = _dfA[["xWok", "yWok", "dx", "dy"]].to_numpy().T
-    plt.quiver(xa,ya,dxa,dya,angles="xy", units="xy", width=0.5, scale=0.1)
-    plt.axis("equal")
-    plt.title("apogee")
-
-    plt.figure(figsize=(8,8))
-    plt.quiver(xa,ya,dxa,dya,angles="xy", units="xy", width=0.2, scale=0.5, color="red")
-    plt.quiver(xb,yb,dxb,dyb,angles="xy", units="xy", width=0.2, scale=0.5, color="blue")
-    plt.axis("equal")
+    # note which positioners are new
+    df["isNew"] = df.positionerID.isin(newRobots)
 
     #### derotate dxy's
     totalRot = numpy.radians(df.alphaMeas+df.betaMeas+df.alphaOffset+df.betaOffset-90)
@@ -415,233 +290,166 @@ def measureOffsets():
     df["dxBeta"] = dxBeta
     df["dyBeta"] = dyBeta
 
+    # filter
+    df = df[df.dxBeta > 0]
+    df = df[df.dyBeta < 0.6]
+
+
+
     plt.figure()
-    sns.scatterplot(x="dxBeta", y="dyBeta", hue="fiberIllum", s=10, data=df, alpha=0.5)
+    sns.scatterplot(x="dxBeta", y="dyBeta", hue="isNew", s=10, data=df, alpha=0.5)
     plt.axis("equal")
 
-    dfMean = df.groupby(["positionerID", "fiberIllum"]).mean().reset_index()
+    dfMean = df.groupby("positionerID").mean().reset_index()
+    # get mean dxy for apogee fibers from metrology fiber
+    dxBetaMed = numpy.median(dfMean.dxBeta)
+    dyBetaMed = numpy.median(dfMean.dyBeta)
+
     plt.figure()
-    sns.scatterplot(x="dxBeta", y="dyBeta", hue="fiberIllum", s=10, data=dfMean, alpha=0.5)
+    sns.scatterplot(x="dxBeta", y="dyBeta", hue="isNew", s=10, data=dfMean, alpha=0.5)
     plt.axis("equal")
 
-    pt = calibration.positionerTable.reset_index()
-    robotIDs = pt.positionerID.to_numpy()
-    metXs = pt.metX.to_numpy()
-    metYs = pt.metY.to_numpy()
-    apX = pt.apX.to_numpy()
-    apY = pt.apY.to_numpy()
-    bossX = pt.bossX.to_numpy()
-    bossY = pt.bossY.to_numpy()
-    for ii, robotID in enumerate(robotIDs):
-        _dfMean = dfMean[dfMean.positionerID==robotID]
-        _dfBoss = _dfMean[_dfMean.fiberIllum=="boss"]
-        _dfAp = _dfMean[_dfMean.fiberIllum=="ap"]
+    ptAp = pt.loc[hasAp]
 
-        metX = metXs[ii]
-        metY = metYs[ii]
+    ptAp["dxBeta"] = ptAp.apX - ptAp.metX
+    ptAp["dyBeta"] = ptAp.apY - ptAp.metY
 
-        if len(_dfBoss) != 0:
-            # update boss fiber position
-            bossX[ii] = metX + float(_dfBoss.dxBeta)
-            bossY[ii] = metY + float(_dfBoss.dyBeta)
+    ptApMerge = ptAp.merge(dfMean, on="positionerID", suffixes=(None, "_new"))
 
-        if len(_dfAp) != 0:
-            # update apogee fiber position
-            apX[ii] = metX + float(_dfAp.dxBeta)
-            apY[ii] = metY + float(_dfAp.dyBeta)
+    ptApMerge["ddx"] = ptApMerge.dxBeta - ptApMerge.dxBeta_new
+    ptApMerge["ddy"] = ptApMerge.dyBeta - ptApMerge.dyBeta_new
+    ptApMerge["ddr"] = numpy.sqrt(ptApMerge.ddx**2+ptApMerge.ddy**2)
 
-    pt["apX"] = apX
-    pt["apY"] = apY
-    pt["bossX"] = bossX
-    pt["bossY"] = bossY
+    missingApRobots = set(ptAp.positionerID) - set(dfMean.positionerID)
+    print("missing Ap robots", missingApRobots)
 
-    # some apFibers (assoc w/boss or broken were not measured)
-    # set them to the average location of the others
+    plt.figure()
+    bins = numpy.arange(0,0.2,0.002)
+    sns.histplot(x="ddr", hue="isNew", bins=bins, data=ptApMerge, element="step")
 
-    goodMeas = pt[pt.apX > 4]
+    # update apogee fiber locations for ONLY new robots
+    positionerIDs = pt.positionerID.to_numpy()
+    apX = []
+    apY = []
+    for pid in positionerIDs:
+        ptRow = pt[pt.positionerID==pid]
+        _apX = float(ptRow.apX)
+        _apY = float(ptRow.apY)
+        _metX = float(ptRow.metX)
+        _metY = float(ptRow.metY)
+        if pid in newRobots:
+            measRow = dfMean[dfMean.positionerID==pid]
+            if len(measRow) > 0:
+                # apogee fiber was measured
+                dxBeta = float(measRow.dxBeta)
+                dyBeta = float(measRow.dyBeta)
+                print(dxBeta, dyBeta)
+                _apX = _metX + dxBeta
+                _apY = _metY + dyBeta
+            else:
+                # apogee fiber wasn't measured
+                # (not hooked up to gang connector)
+                # give it the median value as a guess
+                _apX = _metX + dxBetaMed
+                _apY = _metY + dyBetaMed
 
-    # calcuate bossThetas
-    dxBoss = goodMeas.bossX - goodMeas.metX
-    dyBoss = goodMeas.bossY
+
+        apX.append(_apX)
+        apY.append(_apY)
+
+    pt["apX"] = numpy.array(apX)
+    pt["apY"] = numpy.array(apY)
+
+    # make a model based on old robots
+    # that both apogee and boss fibers
+    oldRobots = pt[~pt.positionerID.isin(newRobots)]
+    oldJoin = oldRobots.merge(wc, on="holeID", suffixes=(None, "_wc"))
+    oldJoin = oldJoin[oldJoin.holeType=="ApogeeBoss"]
+    dxAp = oldJoin.apX - oldJoin.metX
+    dyAp = oldJoin.apY - oldJoin.metY
+    dxBoss = oldJoin.bossX - oldJoin.metX
+    dyBoss = oldJoin.bossY - oldJoin.metY
+    thetaAp = numpy.arctan2(dyAp,dxAp)
     thetaBoss = numpy.arctan2(dyBoss, dxBoss)
 
-    # calcuate apThetas
-    dxAp = goodMeas.apX - goodMeas.metX
-    dyAp = goodMeas.apY
+    # predict thetaBoss from thetaAp
+    X = numpy.ones((len(thetaBoss), 2))
+    X[:,1] = thetaAp
+    coeffs, *_ = numpy.linalg.lstsq(X,thetaBoss)
 
-    X = numpy.ones((len(dxAp), 3))
-    X[:,1] = dxAp
-    X[:,2] = dxAp**2
+    fit = coeffs[0] + thetaAp*coeffs[1]
 
-    coeffs = numpy.linalg.lstsq(X,dyAp)[0]
-
-    dyHat = X@coeffs
-
-    # import pdb; pdb.set_trace()
-
-    # plt.figure()
-    # sns.scatterplot(goodMeas.metX, goodMeas.apX, hue=goodMeas.apY)
-    # plt.figure()
-    # sns.scatterplot(goodMeas.metX, goodMeas.apY, hue=goodMeas.apX)
-    # plt.figure()
-    # sns.scatterplot(goodMeas.apX, goodMeas.apY, hue=goodMeas.metX)
-
-
-
+    rAp = numpy.sqrt(dxAp**2+dyAp**2)
+    rBoss = numpy.sqrt(dxBoss**2+dyBoss**2)
+    print("mean r ap", numpy.mean(rAp), numpy.std(rAp))
+    print("mean r boss", numpy.mean(rBoss), numpy.std(rBoss))
     plt.figure()
-    sns.scatterplot(dxAp, dyAp, hue=thetaBoss)
-    plt.plot(dxAp,dyHat,'.r', ms=5, alpha=0.7)
+    plt.plot(dxAp,dyAp,'.', color="red")
+    plt.plot(dxBoss,dyBoss,'.', color="blue")
     plt.axis("equal")
 
     plt.figure()
-    plt.plot(thetaBoss, dxAp, '.k')
-
-    X2 = numpy.ones((len(dyHat), 2))
-    X2[:,1] = thetaBoss
-
-    coeffs2 = numpy.linalg.lstsq(X2, dxAp)[0]
-
-    dxHat = X2@coeffs2
-    plt.plot(thetaBoss, dxHat, '.r')
-
-    # next estimate full model based on theta
-    X[:,1] = dxHat
-    X[:,2] = dxHat**2
-    dyHat = X@coeffs
+    plt.plot(thetaAp, thetaBoss, '.k')
+    plt.plot(thetaAp, fit, '--r')
+    plt.xlabel("theta ap")
+    plt.ylabel("theta boss")
 
     plt.figure()
-    plt.plot(dxAp, dyAp, '.k')
-    plt.plot(dxHat, dyHat, '.r')
+    plt.plot(rAp, rBoss, '.k')
+    plt.xlabel("r ap")
+    plt.ylabel("r boss")
+
+    # update boss positions for new robots
+    # based on model
+    bossX = []
+    bossY = []
+    for pid in positionerIDs:
+        ptRow = pt[pt.positionerID==pid]
+        _bossX = float(ptRow.bossX)
+        _bossY = float(ptRow.bossY)
+        _apX = float(ptRow.apX)
+        _apY = float(ptRow.apY)
+        _metX = float(ptRow.metX)
+        _metY = float(ptRow.metY)
+        _dxAp = _apX - _metX
+        _dyAp = _apY - _metY
+        if pid in newRobots:
+            apTheta = numpy.arctan2(_dyAp, _dxAp)
+            bossTheta = coeffs[0] + apTheta*coeffs[1]
+            dxBoss = numpy.mean(rBoss) * numpy.cos(bossTheta)
+            dyBoss = numpy.mean(rBoss) * numpy.sin(bossTheta)
+
+            _bossX = _metX + dxBoss
+            _bossY = _metY + dyBoss
+
+        bossX.append(_bossX)
+        bossY.append(_bossY)
 
 
-    # now estimate apXY positions based on boss theta, metX
-    badMeas = pt[pt.apX <= 4]
-    dxBoss = badMeas.bossX - badMeas.metX
-    dyBoss = badMeas.bossY
-    thetaBoss = numpy.arctan2(dyBoss, dxBoss)
+    pt["bossX"] = numpy.array(bossX)
+    pt["bossY"] = numpy.array(bossY)
 
-    # estimateX
-    X = numpy.ones((len(thetaBoss),3))
-    X2 = numpy.ones((len(thetaBoss),2))
-    X2[:,1] = thetaBoss
-    dxEst = X2@coeffs2
-    # estimateY
-    X[:,1] = dxEst
-    X[:,2] = dxEst**2
-    dyEst = X@coeffs
+    _pt = pt.copy()
+    _pt["isNew"] = _pt.positionerID.isin(newRobots)
+    _ptNew = _pt[_pt.isNew]
+    _ptOld = _pt[~_pt.isNew]
 
     plt.figure()
-    plt.plot(dxEst,dyEst,'.k')
+    plt.plot(_ptOld.bossX, _ptOld.bossY, '.k', alpha=0.8)
+    plt.plot(_ptOld.apX, _ptOld.apY, '.k', alpha=0.8)
 
-    xApEst = numpy.array(badMeas.metX + dxEst)
-    yApEst = dyEst
+    plt.plot(_ptNew.bossX, _ptNew.bossY, '.r', ms=10, alpha=0.8)
+    plt.plot(_ptNew.apX, _ptNew.apY, '.r', ms=10, alpha=0.8)
+    plt.axis("equal")
 
-    plt.figure()
-    plt.plot(badMeas.metX, badMeas.metY, '.k')
-    plt.plot(xApEst, yApEst, '.r')
-    plt.plot(badMeas.bossX, badMeas.bossY, '.b')
+    pt.to_csv("positionerTable_sciUpdate.csv")
 
-    # overwrite ap fiber measurements for those
-    # without ccd measurements (dark apogee fibers)
-    # based on fits above
-    badPosIDs = badMeas.positionerID.to_numpy()
-    xAp = pt.apX.to_numpy()
-    yAp = pt.apY.to_numpy()
-    allPosIDs = pt.positionerID.to_numpy()
-    for ii, pid in enumerate(allPosIDs):
-        if pid in badPosIDs:
-            jj = numpy.argwhere(badPosIDs==pid)[0][0]
-            print(jj)
-            xAp[ii] = xApEst[jj]
-            yAp[ii] = yApEst[jj]
-
-
-
-
-    # overwrite here
-    pt["apX"] = xAp
-    pt["apY"] = yAp
-
-
-
-    pt.to_csv("positionerTable.sciFiberMeas.csv")
-
-
-    # import pdb; pdb.set_trace()
-
-        # import pdb; pdb.set_trace()
-        # metX = float(dfMean)
-
-    # theta1 = numpy.arctan2(y,x)
-    # theta2 = numpy.arctan2(y+dy, x+dx)
-    # r1 = numpy.sqrt(x**2+y**2)
-    # r2 = numpy.sqrt((x+dx)**2+(y+dy)**2)
-
-    # plt.figure()
-    # plt.plot(r1,r2, '.k')
-    # plt.title("boss")
-    # plt.axis("equal")
-    # X = numpy.ones((len(r1), 2))
-    # X[:,1] = r1
-    # coeffs = numpy.linalg.lstsq(X,r2)[0]
-    # print("boss coeffs", coeffs)
-    # rFit = X @ coeffs
-    # resid = r2-rFit
-    # plt.figure()
-    # plt.plot(r1,resid, '.k')
-    # plt.title("boss")
-
-
-    # # import pdb; pdb.set_trace()
-
-
-
-
-    # theta1 = numpy.arctan2(y,x)
-    # theta2 = numpy.arctan2(y+dy, x+dx)
-    # r1 = numpy.sqrt(x**2+y**2)
-    # r2 = numpy.sqrt((x+dx)**2+(y+dy)**2)
-
-    # plt.figure()
-    # plt.plot(r1,r2, '.k')
-    # plt.axis("equal")
-    # plt.title("apogee")
-    # X = numpy.ones((len(r1), 2))
-    # X[:,1] = r1
-    # coeffs = numpy.linalg.lstsq(X,r2)[0]
-    # print("ap coeffs", coeffs)
-    # rFit = X @ coeffs
-    # resid = r2-rFit
-    # plt.figure()
-    # plt.plot(r1,resid, '.k')
-    # plt.title("apogee")
-
-    #     # sns.scatterplot(x="xWok", y="yWok", hue="ddr", s=35, alpha=1, palette="vlag", data=dfSciMean[(dfSciMean.fiberIllum=="boss") & (dfSciMean.positionerID==positionerID)])
-    #     # plt.axis("equal")
-
-
-    # _df = df[df.rWok>300]
-    # print(set(_df.positionerID))
-
-    # plt.show()
-    # plt.figure(figsize=(8,8))
-    # sns.scatterplot(x="dx", y="dy", hue="fiberIllum", data=dfSci)
-    # plt.axis("equal")
-    # plt.show()
-    # # look at dx,dy within sets of 5 images for met, ap, and boss
-    # # first just look at the scatter in repeated centroid measruement
-    # imgSetMean = df.groupby(["positionerID", "configID", "fiberIllum"]).mean().reset_index()
-    # imSetStd = df.groupby(["positionerID", "configID", "fiberIllum"]).std().reset_index()
-
-
-
-    # import pdb; pdb.set_trace()
     plt.show()
+
 
 
 
 if __name__ == "__main__":
     # compileData()
     measureOffsets()
-    # updatePositionerTables()
 
