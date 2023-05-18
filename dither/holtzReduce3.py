@@ -13,6 +13,7 @@ from coordio.defaults import calibration
 import seaborn as sns
 
 # uses holtz' new dither.fits tables
+# same as holtzReduce2 except fit the inner zone
 
 # ffmpeg -r 10 -f image2 -i b1-%04d.png -pix_fmt yuv420p b1.mp4
 
@@ -232,11 +233,6 @@ def merge():
 # merge()
 
 df = pandas.read_csv("holtz2merged.csv")
-
-# configIDs = [5259, 5260, 5144, 5146, 5148, 5286, 5287, 5288, 5165, 5167, 5169, 5300, 5301, 5302, 5315, 5316, 5189, 5319, 5192, 5194]
-# print("len before", len(df))
-# df = df[df.configuration_id.isin(configIDs)]
-# print("len after", len(df))
 # import pdb; pdb.set_trace()
 
 # import pdb; pdb.set_trace()
@@ -261,14 +257,14 @@ plt.axis("equal")
 plt.title("Measured Offsets\nrms=%.3f  perc90=%.3f (arcsec)"%(rms, perc90))
 plt.xlabel("x wok (mm)")
 plt.ylabel("y wok (mm)")
-plt.savefig("raw_quiver.png", dpi=250)
+plt.savefig("raw_quiver3.png", dpi=250)
 
 plt.figure()
 bins = numpy.linspace(0,3,100)
 plt.hist(df.roff, bins=bins)
 plt.title("Measured Offsets\nrms=%.3f  perc90=%.3f (arcsec)"%(rms, perc90))
 plt.xlabel("dr (arcsec)")
-plt.savefig("raw_hist.png", dpi=250)
+plt.savefig("raw_hist3.png", dpi=250)
 
 # plotBetaOffsets(df, "desi_xfiboff", "desi_yfiboff")
 
@@ -288,7 +284,7 @@ bins = numpy.linspace(0,3,100)
 plt.hist(betaResids, bins=bins)
 plt.title("Beta off removed\nrms=%.3f  perc90=%.3f (arcsec)"%(rms, perc90))
 plt.xlabel("dr (arcsec)")
-plt.savefig("beta_removed.png", dpi=250)
+plt.savefig("beta_removed3.png", dpi=250)
 
 # try to fit the pattern? in focal coords now but needs to be in wok coords later?
 x = df.xwok.to_numpy()
@@ -296,24 +292,44 @@ y = df.ywok.to_numpy()
 xp = x + df[dxCol].to_numpy()
 yp = y + df[dyCol].to_numpy()
 
-numpy.random.seed(42)
-rands = numpy.random.uniform(size=len(x))
-train_inds = rands <= 0.8
-test_inds = rands > 0.8
+# numpy.random.seed(42)
+# rands = numpy.random.uniform(size=len(x))
+# train_inds = rands <= 0.8
+# test_inds = rands > 0.8
 
 
-polids, coeffs = fitZhaoBurge(x[train_inds],y[train_inds],xp[train_inds],yp[train_inds], polids=numpy.arange(33))
-dx_fit, dy_fit = getZhaoBurgeXY(polids, coeffs, x[test_inds], y[test_inds])
-dx_test = df[dxCol].to_numpy()[test_inds]
-dy_test = df[dyCol].to_numpy()[test_inds]
-resid_xtest = dx_test - dx_fit
-resid_ytest = dy_test - dy_fit
-resid_rtest = numpy.sqrt(resid_xtest**2+resid_ytest**2)
-print("rms test error", numpy.sqrt(numpy.mean(resid_rtest**2)))
+# polids, coeffs = fitZhaoBurge(x[train_inds],y[train_inds],xp[train_inds],yp[train_inds], polids=numpy.arange(33))
+# dx_fit, dy_fit = getZhaoBurgeXY(polids, coeffs, x[test_inds], y[test_inds])
+# dx_test = df[dxCol].to_numpy()[test_inds]
+# dy_test = df[dyCol].to_numpy()[test_inds]
+# resid_xtest = dx_test - dx_fit
+# resid_ytest = dy_test - dy_fit
+# resid_rtest = numpy.sqrt(resid_xtest**2+resid_ytest**2)
+# print("rms test error", numpy.sqrt(numpy.mean(resid_rtest**2)))
 
 # now fit everything
-# polids, coeffs = fitZhaoBurge(x,y,xp,yp, polids=numpy.arange(33))
+polids, coeffs = fitZhaoBurge(x,y,xp,yp, polids=numpy.arange(33))
 dx_fit, dy_fit = getZhaoBurgeXY(polids, coeffs, x, y)
+
+# # these are hardcoded in the FVCTransformAPO
+# zbCoeffs2 = numpy.array([
+#     3.30790633e-01, 4.13533378e-01, 1.71951213e-03, -9.90141758e-04,
+#     -4.48460907e-04, -3.68228879e-06, -2.45423918e-06, 3.06249618e-07,
+#     1.52595326e-06, -1.73037375e-08, 9.09750974e-09, 1.40858150e-08,
+#     -8.69986544e-11, 2.25009469e-09, 5.94658320e-12, 5.67065198e-12,
+#     -1.99111356e-12, 6.33175666e-13, -2.82452951e-12, 1.94818210e-12,
+#     4.03105186e-14, -2.79909483e-14, -1.46249329e-14, -5.04644513e-15,
+#     1.41549916e-15, 1.27613775e-15, -8.70792948e-15, 2.00843998e-04,
+#     -1.05007864e-06, 2.48271534e-07, -9.28099433e-10, 6.13172886e-10,
+#     -1.31799608e-09
+# ])
+
+# dx_fit2, dy_fit2 = getZhaoBurgeXY(polids, zbCoeffs2, x, y)
+# dr = numpy.sqrt((dx_fit2-dx_fit)**2+(dy_fit2-dy_fit)**2)
+
+# plt.figure()
+# plt.hist(dr,bins=100)
+# print("max diff", numpy.max(dr)*1000)
 
 print("polids", polids)
 print("coeffs", coeffs)
@@ -334,21 +350,91 @@ plt.xlabel("x wok (mm)")
 plt.ylabel("y wok (mm)")
 plt.title("data")
 
+
+xNew = df.xwok.to_numpy() + dx_fit
+yNew = df.ywok.to_numpy() + dy_fit
+
 plt.figure(figsize=(10,10))
-plt.quiver(df.xwok, df.ywok, df[dxCol]-dx_fit, df[dyCol]-dy_fit, angles="xy", units="xy", width=0.5, scale=.05)
+plt.quiver(xNew,yNew,xNew-xp,yNew-yp, angles="xy", units="xy", width=0.5, scale=.05)
 plt.axis("equal")
 plt.xlabel("x wok (mm)")
 plt.ylabel("y wok (mm)")
 plt.title("residual")
 
-# plt.title("ZB fit corrected\nrms=%.3f  perc90=%.3f (arcsec)"%(rms, perc90))
-# plt.savefig("fit_quiver.png", dpi=250)
+r = numpy.sqrt(xNew**2+yNew**2)
+keep = r<100
+_xNew = xNew[keep]
+_yNew = yNew[keep]
+_xpNew = xp[keep]
+_ypNew = yp[keep]
 
-plt.figure()
-plt.hist(numpy.sqrt(dx_fit**2+dy_fit**2), bins=numpy.linspace(0,2,40))
+polids, coeffs = fitZhaoBurge(_xNew,_yNew,_xpNew,_ypNew, polids=numpy.arange(33))
+print("coeffs2")
+print(coeffs)
+dx_fit, dy_fit = getZhaoBurgeXY(polids, coeffs, _xNew, _yNew)
+
+xNew[keep] += dx_fit
+yNew[keep] += dy_fit
+
+plt.figure(figsize=(10,10))
+plt.quiver(xNew,yNew,xNew-xp,yNew-yp, angles="xy", units="xy", width=0.5, scale=.05)
+plt.axis("equal")
+plt.xlabel("x wok (mm)")
+plt.ylabel("y wok (mm)")
+plt.title("residual2")
+
+
+# dx = xNew - xp
+# dy = yNew - yp
+
+# r = numpy.sqrt(x**2+y**2)
+# dx = df[dxCol].to_numpy()
+# dy = df[dyCol].to_numpy()
+# ddx = dx_fit - dx
+# ddy = dy_fit - dy
+
+
+
+# # next fit the residuals where rWok < 100
+# keep = r<=100
+# _x = x[keep]
+# _y = y[keep]
+# _dx = ddx[keep]
+# _dy = ddy[keep]
+# _xp = _x + _dx
+# _yp = _y + _dy
+
+# plt.figure(figsize=(10,10))
+# plt.quiver(_x,_y,_dx,_dy, angles="xy", units="xy", width=0.5, scale=.05)
+# plt.axis("equal")
+# plt.xlabel("x wok (mm)")
+# plt.ylabel("y wok (mm)")
+# plt.title("residual zoom")
+
+# # polids = numpy.array([0,1,2,3,4,5,6,9,20,27,28,29,30], dtype=int)
+# polids, coeffs = fitZhaoBurge(_x,_y,_xp,_yp, polids=None)
+# dx_fit, dy_fit = getZhaoBurgeXY(polids, coeffs, _x, _y)
+
+# plt.figure(figsize=(10,10))
+# plt.quiver(_x,_y,dx_fit-_dx,dy_fit-_dy, angles="xy", units="xy", width=0.5) #, scale=.05)
+# plt.axis("equal")
+# plt.xlabel("x wok (mm)")
+# plt.ylabel("y wok (mm)")
+# plt.title("residual zoom residual")
+
+# rErr = numpy.mean(numpy.sqrt(_dx**2+_dy**2))
+# rErr2 = numpy.mean(numpy.sqrt((_dx-dx_fit)**2+(_dy-dy_fit)**2))
+# print("error middle", rErr, rErr2)
+
+# plt.title("ZB fit corrected\nrms=%.3f  perc90=%.3f (arcsec)"%(rms, perc90))
+# plt.savefig("fit_quiver3.png", dpi=250)
+
+# plt.figure()
+# plt.hist(numpy.sqrt(dx_fit**2+dy_fit**2), bins=numpy.linspace(0,2,40))
 
 plt.show()
 import pdb; pdb.set_trace()
+
 
 resid_x = df[dxCol].to_numpy() - dx_fit
 resid_y = df[dyCol].to_numpy() - dy_fit
@@ -366,7 +452,7 @@ plt.axis("equal")
 plt.xlabel("x wok (mm)")
 plt.ylabel("y wok (mm)")
 plt.title("ZB fit corrected\nrms=%.3f  perc90=%.3f (arcsec)"%(rms, perc90))
-plt.savefig("fit_quiver.png", dpi=250)
+plt.savefig("fit_quiver3.png", dpi=250)
 
 
 
@@ -375,7 +461,7 @@ bins = numpy.linspace(0,3,100)
 plt.hist(resid_r, bins=bins)
 plt.xlabel("dr (arcsec)")
 plt.title("ZB fit corrected\nrms=%.3f  perc90=%.3f (arcsec)"%(rms, perc90))
-plt.savefig("fit_hist.png", dpi=250)
+plt.savefig("fit_hist3.png", dpi=250)
 
 
 
@@ -397,7 +483,7 @@ bins = numpy.linspace(0,3,100)
 plt.hist(betaResids, bins=bins)
 plt.title("Fit + Beta off removed\nrms=%.3f  perc90=%.3f (arcsec)"%(rms, perc90))
 plt.xlabel("dr (arcsec)")
-plt.savefig("fit_beta_removed.png", dpi=250)
+plt.savefig("fit_beta_removed3.png", dpi=250)
 
 plt.figure(figsize=(10,10))
 plt.plot(stdx1, stdy1, '.', color="tab:orange", label="orig")
@@ -409,10 +495,10 @@ plt.ylabel("std y beta (arcsec)")
 plt.legend()
 plt.axis("equal")
 plt.title("beta frame scatter\n(fibers w/ >= 3 designs)")
-plt.savefig("beta_scatter.png", dpi=250)
+plt.savefig("beta_scatter3.png", dpi=250)
 
 
-plt.show()
+# plt.show()
 
 
 
