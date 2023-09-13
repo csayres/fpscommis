@@ -6,6 +6,7 @@ import numpy
 import seaborn as sns
 from coordio.defaults import calibration, POSITIONER_HEIGHT
 from coordio.conv import tangentToGuide, guideToTangent, tangentToWok
+import time
 
 
 def fitData():
@@ -341,7 +342,7 @@ def updateConfig():
     jHatRot = (rotMat @ iHatRot.T).T
 
     gfaCoordsNew2["xWok"] = xyCenRot[:,0]
-    gfaCoordsNew2["yWok"] = xyCenRot[:,0]
+    gfaCoordsNew2["yWok"] = xyCenRot[:,1]
     gfaCoordsNew2["ix"] = iHatRot[:,0]
     gfaCoordsNew2["iy"] = iHatRot[:,1]
     gfaCoordsNew2["jx"] = jHatRot[:,0]
@@ -363,7 +364,7 @@ def updateConfig():
     jHatRot = (rotMat @ iHatRot.T).T
 
     gfaCoordsNew3["xWok"] = xyCenRot[:,0]
-    gfaCoordsNew3["yWok"] = xyCenRot[:,0]
+    gfaCoordsNew3["yWok"] = xyCenRot[:,1]
     gfaCoordsNew3["ix"] = iHatRot[:,0]
     gfaCoordsNew3["iy"] = iHatRot[:,1]
     gfaCoordsNew3["jx"] = jHatRot[:,0]
@@ -380,14 +381,87 @@ def updateConfig():
     print(dr)
 
 
+def check():
+    gfa0 = calibration.gfaCoords.reset_index()
+    gfa1 = pandas.read_csv("gfaCoordsNew1.csv")
+    gfa2 = pandas.read_csv("gfaCoordsNew2.csv")
+
+    x1 = gfa0.xWok.to_numpy()
+    y1 = gfa0.yWok.to_numpy()
+    dx1 = gfa0.ix.to_numpy()
+    dy1 = gfa0.iy.to_numpy()
+
+    x2 = gfa1.xWok.to_numpy()
+    y2 = gfa1.yWok.to_numpy()
+    dx2 = gfa1.ix.to_numpy()
+    dy2 = gfa1.iy.to_numpy()
+
+    x3 = gfa2.xWok.to_numpy()
+    y3 = gfa2.yWok.to_numpy()
+    dx3 = gfa2.ix.to_numpy()
+    dy3 = gfa2.iy.to_numpy()
+
+    plt.figure(figsize=(8,8))
+    plt.quiver(x1,y1,dx1,dx2,scale=30, width=0.005, color="black")
+    plt.axis("equal")
+
+
+    plt.quiver(x2,y2,dx2,dx2,scale=30, width=0.005, color="purple")
+    plt.axis("equal")
+
+    plt.quiver(x3,y3,dx3,dx3,scale=30, width=0.005, color="red")
+    plt.axis("equal")
 
 
 
+    plt.show()
+
+
+def try3():
+    # tstart = time.time()
+    # csvFiles = sorted(glob.glob("try3/vecs*.csv"))
+    # df = pandas.concat([pandas.read_csv(x) for x in csvFiles])
+    # df.to_csv("vecs_all.csv", index=False)
+
+    df = pandas.read_csv("vecs_all.csv")
+    # import pdb; pdb.set_trace()
+
+    df = df[(df.mjd >= 60082) & (df.fwhm < 1.75) & (df.rms < 0.35)]  # data with good guide rms
+    df = df[df.xPix==1024]
+    df = df[df.yPix==1024]
+    print("nconfigs", len(set(df.configID)))
+
+
+    # plt.figure()
+    # plt.hist(df.rms, bins=50)
+
+    plt.figure(figsize=(8,8))
+    colorlist = sns.color_palette("rocket", 8)
+    itemlist = list(set(df.paCen))
+    itemname = "paCen"
+
+    for ii, item in enumerate(itemlist):
+        color = colorlist[ii]
+        _df = df[df[itemname]==item]
+        xyFrom = _df[["xWokMeas", "yWokMeas"]].to_numpy()
+        xyTo = _df[["xWokMeasNoCherno", "yWokMeasNoCherno"]].to_numpy()
+        dxy = xyTo - xyFrom
+        plt.quiver(xyFrom[:,0], xyFrom[:,1], dxy[:,0], dxy[:,1], angles="xy", units="xy", scale=500, width=0.5, label=itemname + " " + str(item), color=color)
+
+    plt.axis("equal")
+    plt.legend()
+
+
+    plt.show()
+
+    import pdb; pdb.set_trace()
 
 
 if __name__ == "__main__":
     # fitData()
     # plot()
-    updateConfig()
+    # updateConfig()
+    # check()
+    try3()
 
     plt.show()
