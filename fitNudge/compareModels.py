@@ -29,18 +29,31 @@ cmap = {
     #     5: [153,218],
     #     6: [219,284]
     # },
-    60176 : {  # after baffle rotatoin
-        7: [1,66],
-        8: [67,132],
-        9: [133,198]
-    },
-    60197 : { # after re-focus
+    # 60176 : {  # after baffle rotatoin
+    #     7: [1,66],
+    #     8: [67,132],
+    #     9: [133,198]
+    # },
+    1 : [{60197 : { # after re-tighten
         10 : [1,76],
         11 : [77,148],
         12 : [149,220],
         13 : [223,297],
         14 : [298,372]
-    }
+    }}],
+    2 : [{60209 : { # after focus sweep
+        15 : [64,138],
+        16 : [139,211],
+    }},
+    {60213 : {
+        17 : [1,72],
+        18 : [73,144],
+    }},
+    {60214 : {
+        19 : [1,75],
+        20 : [76,150]
+    }}
+    ]
 }
 
 
@@ -240,25 +253,29 @@ def extractData(imgNum, mjd, configid, reprocess=False, centType="sep", simpleSi
 
 def compileData(reprocess=True):
     dfList = []
-    for mjd, dd in cmap.items():
-        for config, (minImg, maxImg) in dd.items():
-            imgNums = list(range(minImg, maxImg+1))
-            for imgNum in imgNums:
-                dfList.append(extractData(imgNum,mjd,config,reprocess=reprocess, centType="sep"))
+    for scanID, mjdList in cmap.items():
+        for mjdDict in mjdList:
+            for mjd, configDict in mjdDict.items():
+                for config, (minImg, maxImg) in configDict.items():
+                    imgNums = list(range(minImg, maxImg+1))
+                    for imgNum in imgNums:
+                        _df = extractData(imgNum,mjd,config,reprocess=reprocess, centType="sep")
+                        _df["scanID"] = scanID
+                        dfList.append(_df)
 
-            # _func = partial(extractData, mjd=mjd, configid=config, reprocess=reprocess)
-            # p = Pool(2)
-            # _dfList = p.map(_func, imgNums)
-            # dfList.extend(_dfList)
+                # _func = partial(extractData, mjd=mjd, configid=config, reprocess=reprocess)
+                # p = Pool(2)
+                # _dfList = p.map(_func, imgNums)
+                # dfList.extend(_dfList)
 
-            # for imgNum in range(minImg, maxImg+1):
-            #     print("on mjd, img", mjd, imgNum)
-            #     _df = extractData(imgNum, mjd, config, reprocess=reprocess)
-            #     _df["mjd"] = mjd
-            #     dfList.append(_df)
+                # for imgNum in range(minImg, maxImg+1):
+                #     print("on mjd, img", mjd, imgNum)
+                #     _df = extractData(imgNum, mjd, config, reprocess=reprocess)
+                #     _df["mjd"] = mjd
+                #     dfList.append(_df)
 
-    df = pandas.concat(dfList)
-    df.to_csv("rawMeas_comp.csv")
+        df = pandas.concat(dfList)
+        df.to_csv("rawMeas_comp.csv")
 
 
 def _plotImgQuality():
@@ -267,11 +284,11 @@ def _plotImgQuality():
     ## histograms
     fig, axs = plt.subplots(2,2, figsize=(8,4))
     fig.suptitle("PSF spread (2nd moments)")
-    for ii, mjd in enumerate([60176, 60197]):
-        _df = df[df.mjd==mjd]
+    for ii, scanID in enumerate([1,2]):
+        _df = df[df.scanID==scanID]
         axs[ii][0].hist(_df.x2, bins=200, density=True)
         axs[ii][0].set_xlim([5,30])
-        axs[ii][0].set_ylabel("MJD: %i"%mjd)
+        axs[ii][0].set_ylabel("ScanID: %i"%scanID)
         axs[ii][0].set_yticks([])
 
         axs[ii][1].hist(_df.y2, bins=200, density=True)
@@ -288,14 +305,14 @@ def _plotImgQuality():
     ## 2D plots psf spread
     fig, axs = plt.subplots(2,2, figsize=(8,8))
     fig.suptitle("PSF spread (2nd moments)")
-    for ii, mjd in enumerate([60176, 60197]):
-        _df = df[df.mjd==mjd]
+    for ii, scanID in enumerate([1,2]):
+        _df = df[df.scanID==scanID]
         axs[ii][0].scatter(_df.x,_df.y,c=_df.x2,s=0.5,vmin=5,vmax=30)
-        axs[ii][0].set_ylabel("MJD: %i\ny (pix)"%mjd)
+        axs[ii][0].set_ylabel("scanID: %i\ny (pix)"%scanID)
         axs[ii][0].set_aspect("equal")
 
         pcm = axs[ii][1].scatter(_df.x,_df.y,c=_df.y2,s=0.5,vmin=5,vmax=30)
-        axs[ii][0].set_ylabel("MJD: %i\ny (pix)"%mjd)
+        axs[ii][0].set_ylabel("scanID: %i\ny (pix)"%scanID)
         axs[ii][1].set_aspect("equal")
         fig.colorbar(pcm, orientation="vertical", shrink=0.6, ax=axs[ii][0], location="right")
         fig.colorbar(pcm, orientation="vertical", shrink=0.6, ax=axs[ii][1], location="right")
@@ -316,10 +333,10 @@ def _plotImgQuality():
 
     fig, axs = plt.subplots(1,2, figsize=(8,4))
     fig.suptitle("Flux")
-    for ii, mjd in enumerate([60176, 60197]):
-        _df = df[df.mjd==mjd]
+    for ii, scanID in enumerate([1,2]):
+        _df = df[df.scanID==scanID]
         pcm = axs[ii].scatter(_df.x,_df.y,c=_df.fluxPerc,s=0.75,vmin=0.5,vmax=1)
-        axs[ii].set_title("MJD: %i"%mjd)
+        axs[ii].set_title("scanID: %i"%scanID)
         axs[ii].set_xlabel("x (pix)")
         axs[ii].set_aspect("equal")
         fig.colorbar(pcm, orientation="vertical", shrink=0.6, ax=axs[ii], location="right")
@@ -383,12 +400,12 @@ def measureMeanDistortion(includeFIFs=True, useZB=True, saveCoeffs=False):
     # plt.hist(_df.drWok, bins=200)
     # plt.title("MJD: %i"%mjd)
 
-    for mjd in [60176,60197]:
+    for scanID in [1,2]:
 
-        xs = _df[_df.mjd==mjd]["x"].to_numpy()
-        ys = _df[_df.mjd==mjd]["y"].to_numpy()
-        dxs = _df[_df.mjd==mjd]["dxCCD"].to_numpy()
-        dys = _df[_df.mjd==mjd]["dyCCD"].to_numpy()
+        xs = _df[_df.scanID==scanID]["x"].to_numpy()
+        ys = _df[_df.scanID==scanID]["y"].to_numpy()
+        dxs = _df[_df.scanID==scanID]["dxCCD"].to_numpy()
+        dys = _df[_df.scanID==scanID]["dyCCD"].to_numpy()
 
         dr = numpy.sqrt(dxs**2+dys**2)
         rms = numpy.sqrt(numpy.mean(dr**2))
@@ -396,21 +413,21 @@ def measureMeanDistortion(includeFIFs=True, useZB=True, saveCoeffs=False):
         perc95 = numpy.percentile(dr, 95)
 
         plt.figure(figsize=(8,8))
-        plt.title("MJD: %i  centType: %s  simpleSigma: %i\nMean Distortion"%(mjd, centType, simpleSigma))
+        plt.title("scanID: %i  centType: %s  simpleSigma: %i\nMean Distortion"%(scanID, centType, simpleSigma))
         q = plt.quiver(xs,ys,dxs,dys, angles="xy", units="xy", alpha=0.5, width=2, scale=0.005)
         ax = plt.gca()
         ax.quiverkey(q, 0.85, 0.85, 0.5, "units: pixels\nRMS: %.2f\nMedian: %.2f\nperc95: %.2f\nquiver length: 0.5"%(rms,med,perc95))
         ax.set_xlabel("x (pix)")
         ax.set_ylabel("y (pix)")
         ax.set_aspect("equal")
-        plt.savefig("meanDistortion_%i_%s_%i.png"%(mjd, centType,simpleSigma), dpi=250)
+        plt.savefig("meanDistortion_%i_%s_%i.png"%(scanID, centType,simpleSigma), dpi=250)
 
         # fit and plot distortion model
         beta_x, beta_y = fitDistortion(xs, ys, dxs, dys, trainFrac=0.8)
         if saveCoeffs:
-            with open("beta_x_%i_%s_%i.npy"%(mjd,centType, simpleSigma), "wb") as f:
+            with open("beta_x_%i_%s_%i.npy"%(scanID,centType, simpleSigma), "wb") as f:
                 numpy.save(f, beta_x)
-            with open("beta_y_%i_%s_%i.npy"%(mjd, centType, simpleSigma), "wb") as f:
+            with open("beta_y_%i_%s_%i.npy"%(scanID, centType, simpleSigma), "wb") as f:
                 numpy.save(f, beta_y)
 
         dx_hats, dy_hats = applyDistortion(xs,ys,beta_x,beta_y)
@@ -421,14 +438,14 @@ def measureMeanDistortion(includeFIFs=True, useZB=True, saveCoeffs=False):
         perc95 = numpy.percentile(r_hats, 95)
 
         plt.figure(figsize=(8,8))
-        plt.title("MJD: %i   centType: %s  simpleSigma: %i\nDistortion (nudge) Model"%(mjd, centType,simpleSigma))
+        plt.title("scanID: %i   centType: %s  simpleSigma: %i\nDistortion (nudge) Model"%(scanID, centType,simpleSigma))
         q = plt.quiver(xs,ys,dx_hats,dy_hats, angles="xy", units="xy", alpha=0.5, width=2, scale=0.005)
         ax = plt.gca()
         ax.quiverkey(q, 0.85, 0.85, 0.5, "units: pixels\nRMS: %.2f\nMedian: %.2f\nperc95: %.2f\nquiver length: 0.5"%(rms,med,perc95))
         ax.set_xlabel("x (pix)")
         ax.set_ylabel("y (pix)")
         ax.set_aspect("equal")
-        plt.savefig("modelDistortion_%i_%s_%i.png"%(mjd, centType, simpleSigma), dpi=250)
+        plt.savefig("modelDistortion_%i_%s_%i.png"%(scanID, centType, simpleSigma), dpi=250)
 
         # plot model residuals
         dxResid = dxs - dx_hats
@@ -439,14 +456,14 @@ def measureMeanDistortion(includeFIFs=True, useZB=True, saveCoeffs=False):
         perc95 = numpy.percentile(r_resid, 95)
 
         plt.figure(figsize=(8,8))
-        plt.title("MJD: %i  centType: %s  simpleSigma: %i\nModel Residuals"%(mjd, centType, simpleSigma))
+        plt.title("scanID: %i  centType: %s  simpleSigma: %i\nModel Residuals"%(scanID, centType, simpleSigma))
         q = plt.quiver(xs,ys,dxResid,dyResid, angles="xy", units="xy", alpha=0.5, width=2, scale=0.005)
         ax = plt.gca()
         ax.quiverkey(q, 0.85, 0.85, 0.5, "units: pixels\nRMS: %.2f\nMedian: %.2f\nperc95: %.2f\nquiver length: 0.5"%(rms,med,perc95))
         ax.set_xlabel("x (pix)")
         ax.set_ylabel("y (pix)")
         ax.set_aspect("equal")
-        plt.savefig("residualDistortion_%i_%s_%i.png"%(mjd, centType, simpleSigma), dpi=250)
+        plt.savefig("residualDistortion_%i_%s_%i.png"%(scanID, centType, simpleSigma), dpi=250)
 
         plt.close("all")
 
@@ -466,18 +483,18 @@ def compareNudgeModels(clip=0.75):
 
     modelDict = {}
 
-    for mjd in [60176, 60197]:
+    for scanID in [1,2]:
 
-        _df = df[df.mjd==mjd]
+        _df = df[df.scanID==scanID]
         # _df = _df[_df.positionerID < 0]
         xCents = _df.x.to_numpy()/10
         yCents = _df.y.to_numpy()/10
 
-        print("mjd", mjd)
-        modelDict[mjd] = {}
+        print("scanID", scanID)
+        modelDict[scanID] = {}
 
-        beta_x = numpy.load("beta_x_%i_sep_1.npy"%mjd)
-        beta_y = numpy.load("beta_y_%i_sep_1.npy"%mjd)
+        beta_x = numpy.load("beta_x_%i_sep_1.npy"%scanID)
+        beta_y = numpy.load("beta_y_%i_sep_1.npy"%scanID)
         dxs,dys = applyDistortion(xs,ys,beta_x,beta_y)
 
         dxs[dxs<-1*clip] = 0
@@ -491,54 +508,45 @@ def compareNudgeModels(clip=0.75):
 
         # plt.figure()
         # plt.hist(dxs, bins=500)
-        # plt.title("%i dxs"%mjd)
+        # plt.title("%i dxs"%scanID)
 
         # plt.figure()
         # plt.hist(dys, bins=500)
-        # plt.title("%i dys"%mjd)
+        # plt.title("%i dys"%scanID)
 
-        modelDict[mjd]["dxs"] = dxs
-        modelDict[mjd]["dys"] = dys
+        modelDict[scanID]["dxs"] = dxs
+        modelDict[scanID]["dys"] = dys
 
         plt.figure(figsize=(8,8))
         plt.imshow(dxs.reshape(xx.shape), cmap="seismic", origin="lower")
         # plt.plot(xCents,yCents,'x', color="cyan")
 
-        plt.title("%i dxs"%mjd)
+        plt.title("%i dxs"%scanID)
         plt.colorbar()
-        plt.savefig("nudge_viz_dx_%i.png"%mjd, dpi=250)
+        plt.savefig("nudge_viz_dx_%i.png"%scanID, dpi=250)
 
         plt.figure(figsize=(8,8))
         plt.imshow(dys.reshape(xx.shape), cmap="seismic", origin="lower")
         # plt.plot(xCents,yCents,'x', color="cyan")
-        plt.title("%i dys"%mjd)
+        plt.title("%i dys"%scanID)
         plt.colorbar()
-        plt.savefig("nudge_viz_dy_%i.png"%mjd, dpi=250)
+        plt.savefig("nudge_viz_dy_%i.png"%scanID, dpi=250)
 
 
 def applyNudgeModel():
 
     dfList = []
-    for mjd, dd in cmap.items():
-        if mjd not in [60176, 60197]:
-            continue
-        for config, (minImg, maxImg) in dd.items():
-            imgNums = list(range(minImg, maxImg+1))
-            for imgNum in imgNums:
-                beta_x = numpy.load("beta_x_%i_sep_1.npy"%mjd)
-                beta_y = numpy.load("beta_y_%i_sep_1.npy"%mjd)
-                dfList.append(extractData(imgNum, mjd, config, reprocess=True, centType="nudge", beta_x=beta_x, beta_y=beta_y, polids=[0, 1, 2, 3, 4, 5, 6, 9, 20, 27, 28, 29, 30]))
-
-            # _func = partial(extractData, mjd=mjd, configid=config, reprocess=reprocess)
-            # p = Pool(2)
-            # _dfList = p.map(_func, imgNums)
-            # dfList.extend(_dfList)
-
-            # for imgNum in range(minImg, maxImg+1):
-            #     print("on mjd, img", mjd, imgNum)
-            #     _df = extractData(imgNum, mjd, config, reprocess=reprocess)
-            #     _df["mjd"] = mjd
-            #     dfList.append(_df)
+    for scanID, mjdList in cmap.items():
+        for mjdDict in mjdList:
+            for mjd, configDict in mjdDict.items():
+                for config, (minImg, maxImg) in configDict.items():
+                    imgNums = list(range(minImg, maxImg+1))
+                    for imgNum in imgNums:
+                        beta_x = numpy.load("beta_x_%i_sep_1.npy"%scanID)
+                        beta_y = numpy.load("beta_y_%i_sep_1.npy"%scanID)
+                        _df = extractData(imgNum, mjd, config, reprocess=True, centType="nudge", beta_x=beta_x, beta_y=beta_y, polids=[0, 1, 2, 3, 4, 5, 6, 9, 20, 27, 28, 29, 30])
+                        _df["scanID"] = scanID
+                        dfList.append(_df)
 
     df = pandas.concat(dfList)
     df.to_csv("fitMeas_comp.csv")
@@ -557,8 +565,8 @@ def plotEndResult():
     df["dyWok"] = df.yWokMeasMetrology - df.yWokMeasMetrology_mean
     df["drWok"] = numpy.sqrt(df.dxWok**2+df.dyWok**2)
 
-    for mjd in [60176, 60197]:
-        _df = df[df.mjd==mjd]
+    for scanID in [1,2]:
+        _df = df[df.scanID==scanID]
         # xs = _df.xWokMeasMetrology.to_numpy()
         # ys = _df.yWokMeasMetrology.to_numpy()
         xs = _df.x.to_numpy()
@@ -581,23 +589,24 @@ def plotEndResult():
         perc95 = numpy.percentile(_df.drWok, 95)
 
         plt.figure(figsize=(8,8))
-        plt.title("MJD: %i\nFull Fit incl. ZB's"%(mjd))
+        plt.title("scanID: %i\nFull Fit incl. ZB's"%(scanID))
         q = plt.quiver(xs,ys,dxs,dys, angles="xy", units="xy", alpha=0.5, width=1, scale=0.0005)
         ax = plt.gca()
         ax.quiverkey(q, 0.85, 0.85, 0.01, "units: mm\nRMS: %.4f\nMedian: %.4f\nperc95: %.4f\nquiver length: 0.01"%(rms,med,perc95))
         ax.set_xlabel("x (CCD)")
         ax.set_ylabel("y (CCD)")
         ax.set_aspect("equal")
-        plt.savefig("finalMeas_%i.png"%(mjd), dpi=250)
+        plt.savefig("finalMeas_%i.png"%(scanID), dpi=250)
 
 if __name__ == "__main__":
     # extractOne(132,60176)
-    # compileData(reprocess=False)
-    # _plotImgQuality()
-    # measureMeanDistortion(includeFIFs=True, useZB=False, saveCoeffs=True)
-    # compareNudgeModels()
-    # applyNudgeModel()
+    compileData(reprocess=False)
+    _plotImgQuality()
+    measureMeanDistortion(includeFIFs=True, useZB=False, saveCoeffs=True)
+    compareNudgeModels()
+    applyNudgeModel()
     plotEndResult()
+
     # plt.show()
 
 
